@@ -96,6 +96,29 @@ func TestLoadServices(t *testing.T) {
 	if primary.ServiceDir != "traefik" {
 		t.Errorf("Traefik.PrimaryService().ServiceDir = %q, want %q", primary.ServiceDir, "traefik")
 	}
+
+	// Verify GlobalServices
+	if len(sf.GlobalServices) != 1 {
+		t.Fatalf("len(global_services) = %d, want 1", len(sf.GlobalServices))
+	}
+	if sf.GlobalServices[0].ProjectName != "grafana-alloy" {
+		t.Errorf("global_services[0].project_name = %q, want %q", sf.GlobalServices[0].ProjectName, "grafana-alloy")
+	}
+
+	// Verify AllServices merges global into VM services
+	allTraefik := sf.AllServices(traefik)
+	if len(allTraefik) != 2 {
+		t.Errorf("AllServices(Traefik) = %d, want 2", len(allTraefik))
+	}
+	found := false
+	for _, svc := range allTraefik {
+		if svc.ProjectName == "grafana-alloy" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("AllServices(Traefik) missing grafana-alloy from global_services")
+	}
 }
 
 func TestGenerateDocoCDPoll(t *testing.T) {

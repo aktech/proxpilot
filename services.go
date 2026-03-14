@@ -12,9 +12,26 @@ type ServicesFile struct {
 	Domain           string                       `yaml:"domain"`
 	ProxmoxHosts     map[string]ProxmoxHostConfig `yaml:"proxmox_hosts"`
 	VMDefaults       VMDefaults                   `yaml:"vm_defaults"`
+	GlobalServices   []VMService                  `yaml:"global_services,omitempty"`
 	VMs              map[string]*VMConfig         `yaml:"vms"`
 	Devices          map[string][]DeviceRoute     `yaml:"devices"`
 	ProxPilotVersion string                       `yaml:"proxpilot_version,omitempty"`
+}
+
+// AllServices returns a VM's services with global services appended.
+func (sf *ServicesFile) AllServices(vm *VMConfig) []VMService {
+	seen := make(map[string]bool)
+	for _, svc := range vm.Services {
+		seen[svc.ProjectName] = true
+	}
+	result := make([]VMService, len(vm.Services))
+	copy(result, vm.Services)
+	for _, gs := range sf.GlobalServices {
+		if !seen[gs.ProjectName] {
+			result = append(result, gs)
+		}
+	}
+	return result
 }
 
 type ProxmoxHostConfig struct {

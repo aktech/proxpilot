@@ -27,7 +27,7 @@ func (g *Generator) GenerateAll(services *ServicesFile, location string) (bool, 
 
 	// Generate doco-cd configs per VM
 	for vmName, vm := range services.VMsForLocation(location) {
-		c, err := g.generateDocoCDConfigs(vmName, vm)
+		c, err := g.generateDocoCDConfigs(vmName, vm, services)
 		if err != nil {
 			return changed, fmt.Errorf("doco-cd configs for %s: %w", vmName, err)
 		}
@@ -49,7 +49,7 @@ func (g *Generator) GenerateAll(services *ServicesFile, location string) (bool, 
 }
 
 // generateDocoCDConfigs writes docker-compose.doco-cd.yml and doco-cd-poll.yml for a VM.
-func (g *Generator) generateDocoCDConfigs(vmName string, vm *VMConfig) (bool, error) {
+func (g *Generator) generateDocoCDConfigs(vmName string, vm *VMConfig, services *ServicesFile) (bool, error) {
 	primary := vm.PrimaryService()
 	serviceDir := filepath.Join(g.cfg.RepoDir, primary.ServiceDir)
 
@@ -72,7 +72,7 @@ func (g *Generator) generateDocoCDConfigs(vmName string, vm *VMConfig) (bool, er
 
 	// doco-cd-poll.yml
 	pollPath := filepath.Join(serviceDir, "doco-cd-poll.yml")
-	pollContent, err := g.generateDocoCDPoll(vm.Services)
+	pollContent, err := g.generateDocoCDPoll(services.AllServices(vm))
 	if err != nil {
 		return false, err
 	}

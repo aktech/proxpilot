@@ -18,6 +18,11 @@ vm_defaults:
   disk_gb: 32
   ansible_user: admin
 
+global_services:
+  - service_dir: grafana-alloy
+    compose_file: docker-compose.yml
+    project_name: grafana-alloy
+
 vms:
   Traefik:
     location: site1
