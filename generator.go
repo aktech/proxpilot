@@ -94,7 +94,8 @@ func (g *Generator) generateDocoCDCompose() string {
     image: %s
     restart: unless-stopped
     env_file:
-      - %s
+      - path: %s
+        required: false
     environment:
       - POLL_CONFIG_FILE=/poll-config.yml
       - TZ=%s
