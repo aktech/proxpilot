@@ -9,11 +9,12 @@ import (
 
 // ServicesFile represents the top-level ansible/services.yml.
 type ServicesFile struct {
-	Domain       string                       `yaml:"domain"`
-	ProxmoxHosts map[string]ProxmoxHostConfig `yaml:"proxmox_hosts"`
-	VMDefaults   VMDefaults                   `yaml:"vm_defaults"`
-	VMs          map[string]*VMConfig         `yaml:"vms"`
-	Devices      map[string][]DeviceRoute     `yaml:"devices"`
+	Domain           string                       `yaml:"domain"`
+	ProxmoxHosts     map[string]ProxmoxHostConfig `yaml:"proxmox_hosts"`
+	VMDefaults       VMDefaults                   `yaml:"vm_defaults"`
+	VMs              map[string]*VMConfig         `yaml:"vms"`
+	Devices          map[string][]DeviceRoute     `yaml:"devices"`
+	ProxPilotVersion string                       `yaml:"proxpilot_version,omitempty"`
 }
 
 type ProxmoxHostConfig struct {

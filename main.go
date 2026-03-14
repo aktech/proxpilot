@@ -70,10 +70,7 @@ func main() {
 	gen := NewGenerator(cfg, logger)
 	reconciler := NewReconciler(tofu, cfg, logger)
 
-	var updater *Updater
-	if cfg.AutoUpdate {
-		updater = NewUpdater(cfg.UpdateRepo, cfg.UpdateInterval, logger)
-	}
+	updater := NewUpdater(cfg.UpdateRepo, cfg.UpdateInterval, logger)
 
 	// Ensure repo is cloned
 	if err := git.EnsureCloned(); err != nil {
@@ -82,7 +79,7 @@ func main() {
 	}
 
 	if *once {
-		if err := runCycle(ctx, cfg, git, reconciler, bootstrapper, gen, logger); err != nil {
+		if _, err := runCycle(ctx, cfg, git, reconciler, bootstrapper, gen, updater, logger); err != nil {
 			logger.Error("reconciliation failed", "error", err)
 			os.Exit(1)
 		}
@@ -94,8 +91,11 @@ func main() {
 	defer ticker.Stop()
 
 	// Run immediately on start
-	if err := runCycle(ctx, cfg, git, reconciler, bootstrapper, gen, logger); err != nil {
+	if updated, err := runCycle(ctx, cfg, git, reconciler, bootstrapper, gen, updater, logger); err != nil {
 		logger.Error("reconciliation failed", "error", err)
+	} else if updated {
+		logger.Info("binary updated, exiting for systemd restart")
+		os.Exit(0)
 	}
 
 	for {
@@ -104,55 +104,65 @@ func main() {
 			logger.Info("shutting down")
 			return
 		case <-ticker.C:
-			// Self-update check (rate-limited internally by UpdateInterval)
-			if updater != nil && updater.CheckAndUpdate() {
+			if updated, err := runCycle(ctx, cfg, git, reconciler, bootstrapper, gen, updater, logger); err != nil {
+				logger.Error("reconciliation failed", "error", err)
+			} else if updated {
 				logger.Info("binary updated, exiting for systemd restart")
 				os.Exit(0)
-			}
-
-			if err := runCycle(ctx, cfg, git, reconciler, bootstrapper, gen, logger); err != nil {
-				logger.Error("reconciliation failed", "error", err)
 			}
 		}
 	}
 }
 
 // runCycle performs one full reconciliation cycle:
-// pull → reconcile VMs (tofu) → bootstrap new VMs → generate configs → commit & push.
-func runCycle(ctx context.Context, cfg *Config, git *GitOps, reconciler *Reconciler, bootstrapper *Bootstrapper, gen *Generator, logger *slog.Logger) error {
+// pull → check version → reconcile VMs (tofu) → bootstrap new VMs → generate configs → commit & push.
+// Returns (updated, error) where updated=true means the binary was replaced and caller should exit.
+func runCycle(ctx context.Context, cfg *Config, git *GitOps, reconciler *Reconciler, bootstrapper *Bootstrapper, gen *Generator, updater *Updater, logger *slog.Logger) (bool, error) {
 	logger.Info("starting reconciliation cycle")
 
 	// 1. Pull latest
 	if err := git.Pull(); err != nil {
-		return fmt.Errorf("git pull: %w", err)
+		return false, fmt.Errorf("git pull: %w", err)
 	}
 
 	// 2. Load services
 	servicesPath := filepath.Join(cfg.RepoDir, "ansible", "services.yml")
 	services, err := LoadServices(servicesPath)
 	if err != nil {
-		return fmt.Errorf("load services: %w", err)
+		return false, fmt.Errorf("load services: %w", err)
 	}
 
-	// 3. Validate
-	if err := ensureSubdomainUniqueness(services, cfg.Location); err != nil {
-		return fmt.Errorf("validation: %w", err)
-	}
-
-	// 4. Reconcile VMs via OpenTofu (assign IDs/IPs, generate tfvars, tofu apply)
-	result, err := reconciler.Reconcile(ctx, services)
-	if err != nil {
-		return fmt.Errorf("reconcile: %w", err)
-	}
-
-	// 5. If new VMs were created (IDs/IPs assigned), save services.yml
-	if len(result.NewVMs) > 0 {
-		if err := SaveServices(servicesPath, services); err != nil {
-			return fmt.Errorf("save services: %w", err)
+	// 3. Self-update: if services.yml declares a proxpilot_version, match it immediately
+	if services.ProxPilotVersion != "" {
+		if updater.UpdateToVersion(services.ProxPilotVersion) {
+			return true, nil
+		}
+	} else if cfg.AutoUpdate {
+		// No pinned version — fall back to auto-update to latest (rate-limited)
+		if updater.CheckAndUpdateToLatest() {
+			return true, nil
 		}
 	}
 
-	// 6. Bootstrap VMs that need it (new VMs or VMs where doco-cd isn't running)
+	// 4. Validate
+	if err := ensureSubdomainUniqueness(services, cfg.Location); err != nil {
+		return false, fmt.Errorf("validation: %w", err)
+	}
+
+	// 5. Reconcile VMs via OpenTofu (assign IDs/IPs, generate tfvars, tofu apply)
+	result, err := reconciler.Reconcile(ctx, services)
+	if err != nil {
+		return false, fmt.Errorf("reconcile: %w", err)
+	}
+
+	// 6. If new VMs were created (IDs/IPs assigned), save services.yml
+	if len(result.NewVMs) > 0 {
+		if err := SaveServices(servicesPath, services); err != nil {
+			return false, fmt.Errorf("save services: %w", err)
+		}
+	}
+
+	// 7. Bootstrap VMs that need it (new VMs or VMs where doco-cd isn't running)
 	localVMs := services.VMsForLocation(cfg.Location)
 	for vmName, vm := range localVMs {
 		if vm.StaticIP == "" {
@@ -176,16 +186,16 @@ func runCycle(ctx context.Context, cfg *Config, git *GitOps, reconciler *Reconci
 		}
 	}
 
-	// 7. Generate configs (doco-cd + traefik routes)
+	// 8. Generate configs (doco-cd + traefik routes)
 	configsChanged, err := gen.GenerateAll(services, cfg.Location)
 	if err != nil {
-		return fmt.Errorf("generate configs: %w", err)
+		return false, fmt.Errorf("generate configs: %w", err)
 	}
 
-	// 8. Commit and push if anything changed
+	// 9. Commit and push if anything changed
 	hasChanges, err := git.HasChanges()
 	if err != nil {
-		return fmt.Errorf("check changes: %w", err)
+		return false, fmt.Errorf("check changes: %w", err)
 	}
 
 	if hasChanges {
@@ -206,5 +216,5 @@ func runCycle(ctx context.Context, cfg *Config, git *GitOps, reconciler *Reconci
 		"new_vms", len(result.NewVMs),
 		"tofu_applied", result.TofuApplied,
 	)
-	return nil
+	return false, nil
 }

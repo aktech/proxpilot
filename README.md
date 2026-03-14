@@ -88,9 +88,21 @@ update_interval: 1h                # How often to check for updates
 
 ### Self-update
 
-When `auto_update: true`, ProxPilot periodically checks GitHub releases for a newer version. If found, it downloads the binary, atomically replaces itself, and exits. Since systemd has `Restart=always`, the new version starts automatically — no SSH access or manual intervention required.
+ProxPilot can update itself without any network access to the Proxmox host. Two modes:
 
-To trigger an update: push a new tag (e.g. `v0.2.0`) to the `update_repo`. ProxPilot will pick it up within `update_interval`.
+**Pin a version in `services.yml` (recommended):**
+
+```yaml
+proxpilot_version: "0.3.0"
+```
+
+On every reconciliation cycle, after `git pull`, ProxPilot checks if the running version matches `proxpilot_version`. If not, it downloads that exact version from GitHub releases, atomically replaces its own binary, and exits. Systemd `Restart=always` starts the new version automatically.
+
+To upgrade: bump `proxpilot_version` in `services.yml` and push. To rollback: set it back to the old version.
+
+**Auto-update to latest (`auto_update: true` in config.yml):**
+
+When no `proxpilot_version` is set in `services.yml`, and `auto_update` is enabled in the local config, ProxPilot periodically checks GitHub releases for the latest version (rate-limited by `update_interval`, default 1h).
 
 ## services.yml
 

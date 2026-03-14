@@ -16,10 +16,10 @@ import (
 
 // Updater checks GitHub releases and replaces the running binary.
 type Updater struct {
-	repo       string
-	logger     *slog.Logger
-	lastCheck  time.Time
-	interval   time.Duration
+	repo      string
+	logger    *slog.Logger
+	lastCheck time.Time
+	interval  time.Duration
 }
 
 // NewUpdater creates a self-updater.
@@ -40,9 +40,39 @@ type githubRelease struct {
 	} `json:"assets"`
 }
 
-// CheckAndUpdate checks for a newer release and replaces the binary if found.
+// UpdateToVersion downloads and installs a specific version.
 // Returns true if the binary was updated (caller should exit so systemd restarts).
-func (u *Updater) CheckAndUpdate() bool {
+func (u *Updater) UpdateToVersion(desired string) bool {
+	if version == "dev" {
+		u.logger.Debug("skipping self-update in dev mode")
+		return false
+	}
+
+	desired = strings.TrimPrefix(desired, "v")
+	if desired == version {
+		return false
+	}
+
+	u.logger.Info("version mismatch, updating", "running", version, "desired", desired)
+
+	release, err := u.fetchRelease("v" + desired)
+	if err != nil {
+		u.logger.Error("failed to fetch release", "version", desired, "error", err)
+		return false
+	}
+
+	if err := u.downloadAndReplace(release); err != nil {
+		u.logger.Error("self-update failed", "error", err)
+		return false
+	}
+
+	u.logger.Info("updated to desired version, exiting for restart", "version", desired)
+	return true
+}
+
+// CheckAndUpdateToLatest checks for a newer release and replaces the binary if found.
+// Returns true if the binary was updated (caller should exit so systemd restarts).
+func (u *Updater) CheckAndUpdateToLatest() bool {
 	now := time.Now()
 	if now.Sub(u.lastCheck) < u.interval {
 		return false
@@ -56,7 +86,7 @@ func (u *Updater) CheckAndUpdate() bool {
 
 	u.logger.Info("checking for updates", "current", version)
 
-	release, err := u.fetchLatestRelease()
+	release, err := u.fetchRelease("latest")
 	if err != nil {
 		u.logger.Warn("failed to check for updates", "error", err)
 		return false
@@ -79,8 +109,13 @@ func (u *Updater) CheckAndUpdate() bool {
 	return true
 }
 
-func (u *Updater) fetchLatestRelease() (*githubRelease, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", u.repo)
+func (u *Updater) fetchRelease(tagOrLatest string) (*githubRelease, error) {
+	var url string
+	if tagOrLatest == "latest" {
+		url = fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", u.repo)
+	} else {
+		url = fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", u.repo, tagOrLatest)
+	}
 	client := &http.Client{Timeout: 15 * time.Second}
 
 	resp, err := client.Get(url)
@@ -90,7 +125,7 @@ func (u *Updater) fetchLatestRelease() (*githubRelease, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitHub API returned %d for %s", resp.StatusCode, tagOrLatest)
 	}
 
 	var release githubRelease
