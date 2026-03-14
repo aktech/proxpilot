@@ -1,0 +1,82 @@
+---
+domain: example.com
+
+proxmox_hosts:
+  site1:
+    api_host: 10.0.0.1
+    api_token_id: root@pam!test
+    node: pve
+    gateway: 10.0.0.1
+    dns_servers: [10.0.0.1, 8.8.8.8]
+    netmask: 24
+    datastore: local-zfs
+
+vm_defaults:
+  template_vmid: 100
+  cores: 2
+  memory_mb: 2048
+  disk_gb: 32
+  ansible_user: admin
+
+vms:
+  Traefik:
+    location: site1
+    vmid: 104
+    static_ip: 10.0.0.220
+    services:
+      - service_dir: traefik
+        compose_file: docker-compose.site1.yml
+        project_name: traefik-site1
+        primary: true
+    routes:
+      - name: traefik
+        subdomain: traefik
+        url: "http://127.0.0.1:8080/"
+        auth: true
+
+  AppServer:
+    location: site1
+    vmid: 102
+    static_ip: 10.0.0.222
+    cores: 4
+    memory_mb: 8192
+    services:
+      - service_dir: myapp
+        compose_file: docker-compose.yml
+        project_name: myapp
+        primary: true
+    routes:
+      - name: myapp
+        subdomain: myapp
+        port: 8080
+        protocol: https
+        auth: true
+
+  VPN:
+    location: site1
+    vmid: 103
+    static_ip: 10.0.0.221
+    services:
+      - service_dir: wireguard
+        compose_file: docker-compose.yml
+        project_name: wireguard
+        primary: true
+    routes:
+      - name: vpn
+        subdomain: vpn
+        port: 51822
+        protocol: http
+        auth: true
+
+devices:
+  site1:
+    - name: router
+      subdomain: router
+      url: "https://10.0.0.1/"
+    - name: proxmox
+      subdomain: proxmox
+      url: "https://10.0.0.1:8006/"
+      auth: true
+    - name: homeass
+      subdomain: ha
+      url: "http://10.0.0.223:8123/"
