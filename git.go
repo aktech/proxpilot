@@ -56,6 +56,15 @@ func (g *GitOps) Pull() error {
 	return nil
 }
 
+// HeadCommit returns the short hash of the current HEAD commit.
+func (g *GitOps) HeadCommit() string {
+	out, err := g.output("git", "-C", g.repoDir, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 // HasChanges returns true if the working tree has uncommitted changes.
 func (g *GitOps) HasChanges() (bool, error) {
 	output, err := g.output("git", "-C", g.repoDir, "status", "--porcelain")

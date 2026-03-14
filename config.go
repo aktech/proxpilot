@@ -39,9 +39,12 @@ type Config struct {
 	IPRangeEnd   int `yaml:"ip_range_end"`
 
 	// Self-update
-	AutoUpdate      bool   `yaml:"auto_update"`
-	UpdateRepo      string `yaml:"update_repo"`
-	UpdateInterval  time.Duration `yaml:"update_interval"`
+	AutoUpdate     bool          `yaml:"auto_update"`
+	UpdateRepo     string        `yaml:"update_repo"`
+	UpdateInterval time.Duration `yaml:"update_interval"`
+
+	// Web dashboard
+	WebPort int `yaml:"web_port"`
 }
 
 type ProxmoxConfig struct {
@@ -75,6 +78,7 @@ func LoadConfig(path string) (*Config, error) {
 		AutoUpdate:     false,
 		UpdateRepo:     "aktech/proxpilot",
 		UpdateInterval: 1 * time.Hour,
+		WebPort:        9100,
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
